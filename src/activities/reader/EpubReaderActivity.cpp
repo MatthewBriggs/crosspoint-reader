@@ -241,6 +241,16 @@ void EpubReaderActivity::loop() {
     return;
   }
 
+  // Word-lookup mode is modal: while active it consumes all input (page
+  // turns, tilt, and power actions are suspended with it).
+  if (wordLookup && wordLookup->isActive()) {
+    if (wordLookup->loop() == WordLookupMode::LoopResult::Exited) {
+      // Restore the normal render pipeline (grayscale AA, refresh cadence).
+      requestUpdate();
+    }
+    return;
+  }
+
   // End-of-Book screen reached (currentSpineIndex == spine count) means the book is
   // finished. Two independent finished-book features key off this same condition.
   const bool atEndOfBook = currentSpineIndex > 0 && currentSpineIndex >= epub->getSpineItemsCount();
@@ -314,7 +324,8 @@ void EpubReaderActivity::loop() {
     } else if (dictionaryPath.empty()) {
       openReaderMenu();
     } else if (confirmTracker.onRelease(millis()) == ReaderUtils::DoublePressTracker::Event::Double) {
-      LOG_DBG("ERS", "Confirm double-press: word lookup");
+      enterWordLookup();
+      return;
     }
   }
   if (confirmTracker.poll(millis()) == ReaderUtils::DoublePressTracker::Event::Single) {
@@ -523,6 +534,78 @@ void EpubReaderActivity::jumpToPercent(int percent) {
     pendingPercentJump = true;
     section.reset();
   }
+}
+
+EpubReaderActivity::ContentMargins EpubReaderActivity::computeContentMargins() const {
+  ContentMargins m;
+  renderer.getOrientedViewableTRBL(&m.top, &m.right, &m.bottom, &m.left);
+  m.top += SETTINGS.screenMargin;
+  m.left += SETTINGS.screenMargin;
+  m.right += SETTINGS.screenMargin;
+
+  const uint8_t statusBarHeight = UITheme::getInstance().getStatusBarHeight();
+
+  // reserves space for automatic page turn indicator when no status bar or progress bar only
+  if (automaticPageTurnActive &&
+      (statusBarHeight == 0 || statusBarHeight == UITheme::getInstance().getProgressBarHeight())) {
+    m.bottom += std::max(SETTINGS.screenMargin,
+                         static_cast<uint8_t>(statusBarHeight + UITheme::getInstance().getMetrics().statusBarVerticalMargin));
+  } else {
+    m.bottom += std::max(SETTINGS.screenMargin, statusBarHeight);
+  }
+  return m;
+}
+
+void EpubReaderActivity::redrawPageBw() {
+  if (!section) {
+    return;
+  }
+  const auto page = section->loadPageFromSectionFile();
+  if (!page) {
+    return;
+  }
+  const ContentMargins m = computeContentMargins();
+  renderer.clearScreen();
+  page->render(renderer, SETTINGS.getReaderFontId(), m.left, m.top);
+  renderStatusBar();
+}
+
+void EpubReaderActivity::redrawPageBwTrampoline(void* ctx) {
+  static_cast<EpubReaderActivity*>(ctx)->redrawPageBw();
+}
+
+void EpubReaderActivity::enterWordLookup() {
+  if (!section || section->pageCount == 0 || section->currentPage < 0 ||
+      section->currentPage >= section->pageCount) {
+    return;
+  }
+  automaticPageTurnActive = false;
+
+  RenderLock lock(*this);
+  const auto page = section->loadPageFromSectionFile();
+  if (!page) {
+    return;
+  }
+  if (!wordLookup) {
+    wordLookup = makeUniqueNoThrow<WordLookupMode>(renderer, mappedInput, dictionaryPath,
+                                                   WordLookupMode::RedrawFn{this, &redrawPageBwTrampoline});
+    if (!wordLookup) {
+      LOG_ERR("ERS", "OOM: WordLookupMode");
+      return;
+    }
+  }
+  const ContentMargins m = computeContentMargins();
+  if (!wordLookup->enter(*section, *page, SETTINGS.getReaderFontId(), m.left, m.top)) {
+    LOG_DBG("ERS", "No selectable words on page");
+    return;
+  }
+  // The mode runs BW-only: replace the anti-aliased page with a plain BW
+  // render for the duration (restored by requestUpdate() on exit).
+  renderer.clearScreen();
+  page->render(renderer, SETTINGS.getReaderFontId(), m.left, m.top);
+  renderStatusBar();
+  wordLookup->drawHighlight();
+  renderer.displayBuffer(HalDisplay::FAST_REFRESH);
 }
 
 void EpubReaderActivity::openReaderMenu() {
@@ -836,24 +919,11 @@ void EpubReaderActivity::render(RenderLock&& lock) {
   }
 
   // Apply screen viewable areas and additional padding
-  int orientedMarginTop, orientedMarginRight, orientedMarginBottom, orientedMarginLeft;
-  renderer.getOrientedViewableTRBL(&orientedMarginTop, &orientedMarginRight, &orientedMarginBottom,
-                                   &orientedMarginLeft);
-  orientedMarginTop += SETTINGS.screenMargin;
-  orientedMarginLeft += SETTINGS.screenMargin;
-  orientedMarginRight += SETTINGS.screenMargin;
-
-  const uint8_t statusBarHeight = UITheme::getInstance().getStatusBarHeight();
-
-  // reserves space for automatic page turn indicator when no status bar or progress bar only
-  if (automaticPageTurnActive &&
-      (statusBarHeight == 0 || statusBarHeight == UITheme::getInstance().getProgressBarHeight())) {
-    orientedMarginBottom +=
-        std::max(SETTINGS.screenMargin,
-                 static_cast<uint8_t>(statusBarHeight + UITheme::getInstance().getMetrics().statusBarVerticalMargin));
-  } else {
-    orientedMarginBottom += std::max(SETTINGS.screenMargin, statusBarHeight);
-  }
+  const ContentMargins margins = computeContentMargins();
+  const int orientedMarginTop = margins.top;
+  const int orientedMarginRight = margins.right;
+  const int orientedMarginBottom = margins.bottom;
+  const int orientedMarginLeft = margins.left;
 
   const uint16_t viewportWidth = renderer.getScreenWidth() - orientedMarginLeft - orientedMarginRight;
   const uint16_t viewportHeight = renderer.getScreenHeight() - orientedMarginTop - orientedMarginBottom;

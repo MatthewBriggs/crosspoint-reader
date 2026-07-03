@@ -9,6 +9,7 @@
 #include "EpubReaderMenuActivity.h"
 #include "ProgressMapper.h"
 #include "ReaderUtils.h"
+#include "WordLookupMode.h"
 #include "activities/Activity.h"
 
 class EpubReaderActivity final : public Activity {
@@ -50,8 +51,10 @@ class EpubReaderActivity final : public Activity {
   // Dictionary word lookup. dictionaryPath is resolved once in onEnter();
   // when empty (no .cpdict on the SD card) Confirm keeps its instant
   // menu-open behavior and the double-press tracker is bypassed entirely.
+  // wordLookup is created on first use and reused for the rest of the book.
   std::string dictionaryPath;
   ReaderUtils::DoublePressTracker confirmTracker;
+  std::unique_ptr<WordLookupMode> wordLookup;
 
   // Footnote support
   std::vector<FootnoteEntry> currentPageFootnotes;
@@ -71,6 +74,15 @@ class EpubReaderActivity final : public Activity {
   // Jump to a percentage of the book (0-100), mapping it to spine and page.
   void jumpToPercent(int percent);
   void openReaderMenu();
+  struct ContentMargins {
+    int top, right, bottom, left;
+  };
+  ContentMargins computeContentMargins() const;
+  // Re-renders the current page BW (no AA) plus status bar into the
+  // framebuffer without displaying it; used while word lookup is active.
+  void redrawPageBw();
+  static void redrawPageBwTrampoline(void* ctx);
+  void enterWordLookup();
   void onReaderMenuConfirm(EpubReaderMenuActivity::MenuAction action);
   // Returns true if sync acted (launched, or surfaced a save error); false if it was a no-op
   // because no KOReader credentials are stored.
