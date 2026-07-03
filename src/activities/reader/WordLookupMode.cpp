@@ -414,13 +414,16 @@ void WordLookupMode::handleSelectingInput() {
   }
 
   // Confirm: single = dictionary lookup, double = exit (mirrors mode entry).
-  if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
-    if (confirmTracker.onRelease(millis()) == ReaderUtils::DoublePressTracker::Event::Double) {
-      exitToReading();
-      return;
-    }
+  // Double fires on the second press; a lone press looks up once the window closes.
+  if (mappedInput.wasPressed(MappedInputManager::Button::Confirm) &&
+      confirmTracker.consumeSecondPress(millis())) {
+    exitToReading();
+    return;
   }
-  if (confirmTracker.poll(millis()) == ReaderUtils::DoublePressTracker::Event::Single) {
+  if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
+    confirmTracker.arm(millis());
+  }
+  if (confirmTracker.consumeExpired(millis())) {
     lookupSelectedWord();
     return;
   }

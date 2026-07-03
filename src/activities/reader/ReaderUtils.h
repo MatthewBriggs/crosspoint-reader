@@ -14,37 +14,48 @@ constexpr unsigned long SKIP_HOLD_MS = 700;
 constexpr unsigned long BOOKMARK_HOLD_MS = 400;
 constexpr unsigned long BOOKMARK_MESSAGE_DURATION_MS = 2500;
 
-// Distinguishes single from double button presses. The caller feeds release
-// edges into onRelease() and polls poll() every loop; a Single is only
-// reported after WINDOW_MS elapses without a second release, so single-press
-// actions gated through this tracker fire with that latency.
+// Distinguishes single from double button presses.
+//
+// The double action fires the instant the second press lands (armSecond →
+// consumeSecondPress), not after the window expires, so it feels immediate.
+// The single action is only confirmed once WINDOW_MS elapses with no second
+// press (consumeExpired) — that latency is inherent to double-tap: the first
+// press stays ambiguous until the window closes.
+//
+// Usage: arm() on the first release; consumeSecondPress() on any later press;
+// consumeExpired() every loop to flush a lone press to the single action.
 struct DoublePressTracker {
-  static constexpr unsigned long WINDOW_MS = 350;
+  static constexpr unsigned long WINDOW_MS = 300;
 
-  enum class Event { None, Single, Double };
-
-  Event onRelease(const unsigned long now) {
-    if (pending && now - firstReleaseAt <= WINDOW_MS) {
-      pending = false;
-      return Event::Double;
-    }
+  // First release seen — start waiting for a possible second press.
+  void arm(const unsigned long now) {
     pending = true;
-    firstReleaseAt = now;
-    return Event::None;
+    firstAt = now;
   }
 
-  Event poll(const unsigned long now) {
-    if (pending && now - firstReleaseAt > WINDOW_MS) {
+  // True once, when a second press arrives within the window (the double).
+  bool consumeSecondPress(const unsigned long now) {
+    if (pending && now - firstAt <= WINDOW_MS) {
       pending = false;
-      return Event::Single;
+      return true;
     }
-    return Event::None;
+    return false;
   }
 
+  // True once, when the window closes with no second press (the single).
+  bool consumeExpired(const unsigned long now) {
+    if (pending && now - firstAt > WINDOW_MS) {
+      pending = false;
+      return true;
+    }
+    return false;
+  }
+
+  bool isPending() const { return pending; }
   void reset() { pending = false; }
 
  private:
-  unsigned long firstReleaseAt = 0;
+  unsigned long firstAt = 0;
   bool pending = false;
 };
 

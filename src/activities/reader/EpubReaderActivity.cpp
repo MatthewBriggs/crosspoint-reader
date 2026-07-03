@@ -316,21 +316,26 @@ void EpubReaderActivity::loop() {
   // Enter reader menu activity on short-press Confirm. A long-press that fired a bound
   // function (bookmark or KOReader sync) sets ignoreNextConfirmRelease so the release
   // following the hold does not also open the menu.
-  // With a dictionary on the SD card, Confirm is routed through the double-press
-  // tracker: double-press enters word-lookup mode, and the menu opens only after
-  // the 350 ms window expires. Without one, the menu opens instantly as before.
+  // With a dictionary on the SD card, Confirm becomes a double-tap: the first release
+  // arms the tracker, and the second *press* enters word-lookup immediately (no waiting
+  // out the window). A lone press falls through to the menu once the window closes.
+  // Without a dictionary, the menu opens instantly on release as before.
+  if (!dictionaryPath.empty() && mappedInput.wasPressed(MappedInputManager::Button::Confirm) &&
+      confirmTracker.consumeSecondPress(millis())) {
+    enterWordLookup();
+    return;
+  }
   if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
     if (ignoreNextConfirmRelease) {
       ignoreNextConfirmRelease = false;
       confirmTracker.reset();
     } else if (dictionaryPath.empty()) {
       openReaderMenu();
-    } else if (confirmTracker.onRelease(millis()) == ReaderUtils::DoublePressTracker::Event::Double) {
-      enterWordLookup();
-      return;
+    } else {
+      confirmTracker.arm(millis());
     }
   }
-  if (confirmTracker.poll(millis()) == ReaderUtils::DoublePressTracker::Event::Single) {
+  if (confirmTracker.consumeExpired(millis())) {
     openReaderMenu();
   }
 
@@ -599,11 +604,16 @@ void EpubReaderActivity::enterWordLookup() {
     LOG_DBG("ERS", "No selectable words on page");
     return;
   }
-  // The mode runs BW-only: replace the anti-aliased page with a plain BW
-  // render for the duration (restored by requestUpdate() on exit).
-  renderer.clearScreen();
-  page->render(renderer, SETTINGS.getReaderFontId(), m.left, m.top);
-  renderStatusBar();
+  // The BW framebuffer already holds this page from the last render (the AA
+  // pass leaves it intact), so we normally skip re-rendering and just invert
+  // the first word — the mode is BW-only anyway. Only re-render when something
+  // is covering the page, i.e. the bookmark popup.
+  if (showBookmarkMessage) {
+    renderer.clearScreen();
+    page->render(renderer, SETTINGS.getReaderFontId(), m.left, m.top);
+    renderStatusBar();
+    showBookmarkMessage = false;
+  }
   wordLookup->drawHighlight();
   renderer.displayBuffer(HalDisplay::FAST_REFRESH);
 }
