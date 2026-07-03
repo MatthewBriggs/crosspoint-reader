@@ -1,5 +1,6 @@
 #include "SettingsActivity.h"
 
+#include <CpDictSdFile.h>
 #include <GfxRenderer.h>
 #include <Logging.h>
 
@@ -39,7 +40,9 @@ void SettingsActivity::rebuildSettingsLists() {
   // reader activity ran — otherwise the font-family picker shows stale list.
   sdFontSystem.refreshIfDirty();
 
-  for (auto& setting : getSettingsList(&sdFontSystem.registry())) {
+  const auto dictionaries = CpDictSdFile::listDictionaries();
+
+  for (auto& setting : getSettingsList(&sdFontSystem.registry(), &dictionaries)) {
     if (setting.category == StrId::STR_NONE_OPT) continue;
     if (setting.category == StrId::STR_CAT_DISPLAY) {
       displaySettings.push_back(setting);

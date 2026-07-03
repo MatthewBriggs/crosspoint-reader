@@ -2,6 +2,8 @@
 
 #include <Logging.h>
 
+#include <algorithm>
+
 namespace {
 constexpr const char* DICTIONARY_DIR = "/dictionary";
 
@@ -31,22 +33,20 @@ bool CpDictSdFile::readAt(const uint32_t offset, void* buf, const size_t len) {
   return file.read(buf, len) == static_cast<int>(len);
 }
 
-std::string CpDictSdFile::findFirstDictionary() {
+std::vector<std::string> CpDictSdFile::listDictionaries() {
+  std::vector<std::string> names;
   HalFile dir = Storage.open(DICTIONARY_DIR);
   if (!dir || !dir.isDirectory()) {
-    return {};
+    return names;
   }
 
   char name[128];
-  std::string best;
   HalFile entry = dir.openNextFile();
   while (entry) {
     if (!entry.isDirectory()) {
       entry.getName(name, sizeof(name));
       if (name[0] != '.' && hasCpdictExtension(name)) {
-        if (best.empty() || strcmp(name, best.c_str()) < 0) {
-          best = name;
-        }
+        names.emplace_back(name);
       }
     }
     entry.close();
@@ -54,8 +54,22 @@ std::string CpDictSdFile::findFirstDictionary() {
   }
   dir.close();
 
-  if (best.empty()) {
+  std::sort(names.begin(), names.end());
+  return names;
+}
+
+std::string CpDictSdFile::findDictionary(const char* preferredName) {
+  const auto names = listDictionaries();
+  if (names.empty()) {
     return {};
   }
-  return std::string(DICTIONARY_DIR) + "/" + best;
+  if (preferredName != nullptr && preferredName[0] != '\0') {
+    for (const auto& name : names) {
+      if (name == preferredName) {
+        return std::string(DICTIONARY_DIR) + "/" + name;
+      }
+    }
+    // Preferred file was removed from the card — fall back to the first.
+  }
+  return std::string(DICTIONARY_DIR) + "/" + names.front();
 }

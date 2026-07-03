@@ -160,7 +160,7 @@ void EpubReaderActivity::onEnter() {
   // NOTE: This affects layout math and must be applied before any render calls.
   ReaderUtils::applyOrientation(renderer, SETTINGS.orientation);
 
-  dictionaryPath = CpDictSdFile::findFirstDictionary();
+  dictionaryPath = CpDictSdFile::findDictionary(SETTINGS.dictionaryFileName);
 
   epub->setupCacheDir();
 

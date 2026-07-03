@@ -90,6 +90,40 @@ inline SettingInfo buildFontFamilySetting(const SdCardFontRegistry* registry) {
   return s;
 }
 
+// Build the dictionary picker from the *.cpdict files found on the SD card.
+// The selection is stored by file name (SETTINGS.dictionaryFileName) so it
+// stays stable when files are added or removed; empty means "first
+// alphabetically", which is also what index 0 shows.
+inline SettingInfo buildDictionarySetting(std::vector<std::string> dictNames) {
+  SettingInfo s;
+  s.nameId = StrId::STR_DICTIONARY;
+  s.type = SettingType::ENUM;
+  s.enumStringValues = dictNames;
+  s.key = "dictionaryFileName";
+  s.category = StrId::STR_CAT_READER;
+
+  s.valueGetter = [dictNames]() -> uint8_t {
+    if (SETTINGS.dictionaryFileName[0] != '\0') {
+      for (size_t i = 0; i < dictNames.size(); i++) {
+        if (dictNames[i] == SETTINGS.dictionaryFileName) {
+          return static_cast<uint8_t>(i);
+        }
+      }
+      // Selected file no longer on the card — show the fallback (first).
+    }
+    return 0;
+  };
+
+  s.valueSetter = [dictNames](uint8_t v) {
+    if (v < dictNames.size()) {
+      strncpy(SETTINGS.dictionaryFileName, dictNames[v].c_str(), sizeof(SETTINGS.dictionaryFileName) - 1);
+      SETTINGS.dictionaryFileName[sizeof(SETTINGS.dictionaryFileName) - 1] = '\0';
+    }
+  };
+
+  return s;
+}
+
 // Shared settings list used by both the device settings UI and the web settings API.
 // Each entry has a key (for JSON API) and category (for grouping).
 // ACTION-type entries and entries without a key are device-only.
@@ -98,8 +132,11 @@ inline SettingInfo buildFontFamilySetting(const SdCardFontRegistry* registry) {
 // #1636) so the per-entry SettingInfo cost is paid once. When an
 // SdCardFontRegistry is supplied AND has SD card fonts installed, the
 // font-family entry is replaced in a per-call copy with a registry-aware
-// version. Callers without SD fonts pay only a vector copy.
-inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* registry = nullptr) {
+// version. Callers without SD fonts pay only a vector copy. Similarly, when
+// dictionaries is non-null and holds at least two *.cpdict names, a
+// dictionary picker is inserted after the font-family entry.
+inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* registry = nullptr,
+                                                const std::vector<std::string>* dictionaries = nullptr) {
   static const std::vector<SettingInfo> baseList = [] {
     std::vector<SettingInfo> v = {
         // --- Display ---
@@ -278,6 +315,13 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
     auto it = std::find_if(v.begin(), v.end(), [](const SettingInfo& s) { return s.nameId == StrId::STR_FONT_FAMILY; });
     if (it != v.end()) {
       *it = buildFontFamilySetting(registry);
+    }
+  }
+  // A picker with fewer than two dictionaries has nothing to choose.
+  if (dictionaries && dictionaries->size() >= 2) {
+    auto it = std::find_if(v.begin(), v.end(), [](const SettingInfo& s) { return s.nameId == StrId::STR_FONT_FAMILY; });
+    if (it != v.end()) {
+      v.insert(it + 1, buildDictionarySetting(*dictionaries));
     }
   }
   return v;

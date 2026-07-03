@@ -1,6 +1,7 @@
 #include "CrossPointWebServer.h"
 
 #include <ArduinoJson.h>
+#include <CpDictSdFile.h>
 #include <FsHelpers.h>
 #include <HalGPIO.h>
 #include <HalStorage.h>
@@ -1126,8 +1127,9 @@ void CrossPointWebServer::handleSettingsPage() const {
 void CrossPointWebServer::handleGetSettings() const {
   // Pass the SD font registry so the fontFamily setting's enumStringValues
   // includes SD-resident families — otherwise the web API only exposes the
-  // three built-in fonts.
-  const auto& settings = getSettingsList(&sdFontSystem.registry());
+  // three built-in fonts. Same for the dictionary picker.
+  const auto dictionaries = CpDictSdFile::listDictionaries();
+  const auto& settings = getSettingsList(&sdFontSystem.registry(), &dictionaries);
 
   server->setContentLength(CONTENT_LENGTH_UNKNOWN);
   server->send(200, "application/json", "");
@@ -1229,7 +1231,8 @@ void CrossPointWebServer::handlePostSettings() {
     return;
   }
 
-  const auto& settings = getSettingsList(&sdFontSystem.registry());
+  const auto dictionaries = CpDictSdFile::listDictionaries();
+  const auto& settings = getSettingsList(&sdFontSystem.registry(), &dictionaries);
   int applied = 0;
 
   for (const auto& s : settings) {
