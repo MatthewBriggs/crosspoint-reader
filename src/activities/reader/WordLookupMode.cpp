@@ -194,6 +194,12 @@ void WordLookupMode::exitToReading() {
     dict.close();
     dictOpened = false;
   }
+  // Normally the snapshot is already freed by closing the definition overlay;
+  // free it defensively so an unexpected exit path can't leak ~48KB.
+  if (pageSnapshotted) {
+    renderer.restoreBwBuffer();
+    pageSnapshotted = false;
+  }
   pageDirty = false;
 }
 
@@ -286,6 +292,18 @@ void WordLookupMode::lookupSelectedWord() {
   scrollLine = 0;
   state = State::Definition;
   RenderLock lock;
+  // Snapshot the clean page+highlight before the panel covers it, so closing
+  // the definition is a buffer restore + refresh instead of an SD reload and
+  // full re-render. (A prior miss-popup could still be on screen; repaint the
+  // page first so the snapshot is clean.)
+  if (pageDirty) {
+    if (redrawFn.fn != nullptr) {
+      redrawFn.fn(redrawFn.ctx);
+    }
+    drawHighlight();
+    pageDirty = false;
+  }
+  pageSnapshotted = renderer.storeBwBuffer();
   drawDefinitionOverlay();
 }
 
@@ -405,7 +423,15 @@ void WordLookupMode::handleDefinitionInput() {
     defLines.clear();
     defLines.shrink_to_fit();
     RenderLock lock;
-    redrawPageWithHighlight();
+    if (pageSnapshotted) {
+      // Restore the page+highlight captured when the panel opened — no SD
+      // reload, no re-render; just a framebuffer copy + fast refresh.
+      renderer.restoreBwBuffer();
+      renderer.displayBuffer(HalDisplay::FAST_REFRESH);
+      pageSnapshotted = false;
+    } else {
+      redrawPageWithHighlight();
+    }
     return;
   }
 

@@ -106,4 +106,7 @@ class WordLookupMode {
   // A popup (miss / missing dictionary) painted over the page; the next
   // interaction must repaint the page instead of taking the XOR fast path.
   bool pageDirty = false;
+  // True while the definition overlay holds a stored framebuffer snapshot of
+  // the page+highlight (freed on restore when the overlay closes).
+  bool pageSnapshotted = false;
 };
