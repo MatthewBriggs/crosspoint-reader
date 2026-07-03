@@ -425,13 +425,17 @@ void WordLookupMode::handleDefinitionInput() {
     RenderLock lock;
     if (pageSnapshotted) {
       // Restore the page+highlight captured when the panel opened — no SD
-      // reload, no re-render; just a framebuffer copy + fast refresh.
+      // reload, no re-render; just a framebuffer copy.
       renderer.restoreBwBuffer();
-      renderer.displayBuffer(HalDisplay::FAST_REFRESH);
       pageSnapshotted = false;
-    } else {
-      redrawPageWithHighlight();
+    } else if (redrawFn.fn != nullptr) {
+      redrawFn.fn(redrawFn.ctx);
+      drawHighlight();
     }
+    // The definition panel is a large high-contrast box; a FAST_REFRESH would
+    // leave a ghost of it. Dismiss with HALF_REFRESH to fully clear the area —
+    // the same balanced refresh the reader uses to clear page-turn ghosting.
+    renderer.displayBuffer(HalDisplay::HALF_REFRESH);
     return;
   }
 
