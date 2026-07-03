@@ -1,8 +1,46 @@
 # File Formats
 
-These formats describe the SD-card cache files under `/.crosspoint/epub_<hash>/`.
+These formats describe the SD-card cache files under `/.crosspoint/epub_<hash>/`
+and the dictionary file under `/dictionary/`.
 All POD fields are written in the ESP32 little-endian representation used by
 `Serialization.h`; strings are length-prefixed UTF-8.
+
+## `*.cpdict` (CPD1)
+
+Offline dictionary consumed by `lib/Dictionary/CpDictFile`. The reader uses the
+first `*.cpdict` file (alphabetical) found in `/dictionary/` on the SD card.
+Files are produced by `scripts/build_dictionary.py` from TSV or StarDict input.
+
+Lookup is a streaming binary search over the index table; the device compares
+the query against keys with `memcmp` on raw UTF-8 bytes, so the converter MUST
+sort entries by `key.encode("utf-8")` (byte order), and keys MUST be stored
+NFC-normalized and casefolded — the same normalization `dictNormalizeKey()`
+applies to the query on-device.
+
+All integers little-endian:
+
+```text
+Header (32 bytes):
+  char[4]  magic        "CPD1"
+  u32      entryCount
+  u32      indexOffset  absolute offset of the index table (== 32)
+  u32      keysOffset   absolute offset of the keys blob
+  u32      defsOffset   absolute offset of the definitions blob
+  u8[12]   reserved     zero
+
+Index table: entryCount records of 12 bytes, sorted by key bytes:
+  u32      keyOffset    relative to keysOffset
+  u32      defOffset    relative to defsOffset
+  u16      keyLen       bytes, no NUL terminator, <= 63
+  u16      defLen       bytes, <= 4096
+
+Keys blob:  concatenated raw UTF-8 keys (no separators)
+Defs blob:  concatenated raw UTF-8 definitions; multiple senses of the same
+            headword are joined with '\n'
+```
+
+Limits: keys longer than 63 bytes are dropped by the converter; definitions
+are truncated at 4096 bytes on a UTF-8 codepoint boundary.
 
 ## `book.bin`
 
