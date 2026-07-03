@@ -14,6 +14,40 @@ constexpr unsigned long SKIP_HOLD_MS = 700;
 constexpr unsigned long BOOKMARK_HOLD_MS = 400;
 constexpr unsigned long BOOKMARK_MESSAGE_DURATION_MS = 2500;
 
+// Distinguishes single from double button presses. The caller feeds release
+// edges into onRelease() and polls poll() every loop; a Single is only
+// reported after WINDOW_MS elapses without a second release, so single-press
+// actions gated through this tracker fire with that latency.
+struct DoublePressTracker {
+  static constexpr unsigned long WINDOW_MS = 350;
+
+  enum class Event { None, Single, Double };
+
+  Event onRelease(const unsigned long now) {
+    if (pending && now - firstReleaseAt <= WINDOW_MS) {
+      pending = false;
+      return Event::Double;
+    }
+    pending = true;
+    firstReleaseAt = now;
+    return Event::None;
+  }
+
+  Event poll(const unsigned long now) {
+    if (pending && now - firstReleaseAt > WINDOW_MS) {
+      pending = false;
+      return Event::Single;
+    }
+    return Event::None;
+  }
+
+  void reset() { pending = false; }
+
+ private:
+  unsigned long firstReleaseAt = 0;
+  bool pending = false;
+};
+
 inline void applyOrientation(GfxRenderer& renderer, const uint8_t orientation) {
   switch (orientation) {
     case CrossPointSettings::ORIENTATION::PORTRAIT:

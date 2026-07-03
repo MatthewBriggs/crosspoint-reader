@@ -8,6 +8,7 @@
 #include "BookmarkEntry.h"
 #include "EpubReaderMenuActivity.h"
 #include "ProgressMapper.h"
+#include "ReaderUtils.h"
 #include "activities/Activity.h"
 
 class EpubReaderActivity final : public Activity {
@@ -46,6 +47,12 @@ class EpubReaderActivity final : public Activity {
   // Consumed in onExit() to relocate the finished book into /Read/.
   bool pendingReadFolderMove = false;
 
+  // Dictionary word lookup. dictionaryPath is resolved once in onEnter();
+  // when empty (no .cpdict on the SD card) Confirm keeps its instant
+  // menu-open behavior and the double-press tracker is bypassed entirely.
+  std::string dictionaryPath;
+  ReaderUtils::DoublePressTracker confirmTracker;
+
   // Footnote support
   std::vector<FootnoteEntry> currentPageFootnotes;
   struct SavedPosition {
@@ -63,6 +70,7 @@ class EpubReaderActivity final : public Activity {
   bool saveProgress(int spineIndex, int currentPage, int pageCount);
   // Jump to a percentage of the book (0-100), mapping it to spine and page.
   void jumpToPercent(int percent);
+  void openReaderMenu();
   void onReaderMenuConfirm(EpubReaderMenuActivity::MenuAction action);
   // Returns true if sync acted (launched, or surfaced a save error); false if it was a no-op
   // because no KOReader credentials are stored.
