@@ -245,7 +245,9 @@ void EpubReaderActivity::loop() {
   // turns, tilt, and power actions are suspended with it).
   if (wordLookup && wordLookup->isActive()) {
     if (wordLookup->loop() == WordLookupMode::LoopResult::Exited) {
-      // Restore the normal render pipeline (grayscale AA, refresh cadence).
+      // Restore the normal render pipeline (grayscale AA). The mode's many
+      // FAST_REFRESHes leave ghosting; schedule the HALF cleanup path.
+      pagesUntilFullRefresh = 1;
       requestUpdate();
     }
     return;
