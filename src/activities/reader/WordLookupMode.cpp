@@ -4,14 +4,23 @@
 #include <Epub/Page.h>
 #include <Epub/Section.h>
 #include <Epub/blocks/TextBlock.h>
+#include <I18n.h>
 #include <Logging.h>
+#include <Memory.h>
 
 #include "activities/RenderLock.h"
+#include "components/UITheme.h"
+#include "fontIds.h"
 
 namespace {
 
 // Extra pixels around the word so the inverted box does not hug the glyphs.
 constexpr int HIGHLIGHT_PAD_X = 2;
+
+// Definition overlay geometry.
+constexpr int PANEL_BORDER = 2;
+constexpr int PANEL_PAD = 10;
+constexpr float PANEL_MAX_HEIGHT_RATIO = 0.45f;
 
 bool startsWithEmSpace(const std::string& word) {
   return word.size() >= 3 && static_cast<uint8_t>(word[0]) == 0xE2 && static_cast<uint8_t>(word[1]) == 0x80 &&
@@ -113,6 +122,13 @@ void WordLookupMode::moveSelection(const size_t next) {
     return;
   }
   RenderLock lock;
+  if (pageDirty) {
+    // A popup was painted over the page; the XOR fast path would move the
+    // highlight through stale pixels. Repaint fully instead.
+    selected = next;
+    redrawPageWithHighlight();
+    return;
+  }
   drawHighlight();  // XOR is self-inverse: un-draws the current highlight
   selected = next;
   drawHighlight();
@@ -152,6 +168,157 @@ void WordLookupMode::exitToReading() {
   section = nullptr;
   words.clear();
   words.shrink_to_fit();  // release the index; mode may stay allocated for the book
+  headword.clear();
+  defLines.clear();
+  defLines.shrink_to_fit();
+  if (dictOpened) {
+    dict.close();
+    dictOpened = false;
+  }
+  pageDirty = false;
+}
+
+void WordLookupMode::redrawPageWithHighlight() {
+  if (redrawFn.fn != nullptr) {
+    redrawFn.fn(redrawFn.ctx);
+  }
+  drawHighlight();
+  renderer.displayBuffer(HalDisplay::FAST_REFRESH);
+  pageDirty = false;
+}
+
+void WordLookupMode::lookupSelectedWord() {
+  if (!dictOpened) {
+    if (!dict.open(dictionaryPath)) {
+      RenderLock lock;
+      GUI.drawPopup(renderer, tr(STR_DICT_NOT_FOUND));
+      pageDirty = true;
+      return;
+    }
+    dictOpened = true;
+  }
+
+  const std::string raw = selectedRawWord();
+  const std::string key = dictNormalizeKey(raw);
+  if (key.empty()) {
+    return;
+  }
+
+  const auto defBuf = makeUniqueNoThrow<char[]>(CpDictFile::MAX_DEF_LEN + 1);
+  if (!defBuf) {
+    LOG_ERR("WLM", "OOM: definition buffer");
+    return;
+  }
+
+  // Exact key, then cheap morphological fallbacks.
+  std::string matched = key;
+  bool found = dict.lookup(key.c_str(), defBuf.get(), CpDictFile::MAX_DEF_LEN + 1);
+  if (!found) {
+    const std::string noPossessive = dictKeyStripPossessive(key);
+    if (!noPossessive.empty() && dict.lookup(noPossessive.c_str(), defBuf.get(), CpDictFile::MAX_DEF_LEN + 1)) {
+      matched = noPossessive;
+      found = true;
+    }
+  }
+  if (!found) {
+    const std::string noPlural = dictKeyStripPluralS(key);
+    if (!noPlural.empty() && dict.lookup(noPlural.c_str(), defBuf.get(), CpDictFile::MAX_DEF_LEN + 1)) {
+      matched = noPlural;
+      found = true;
+    }
+  }
+
+  if (!found) {
+    LOG_DBG("WLM", "No definition: '%s'", key.c_str());
+    RenderLock lock;
+    GUI.drawPopup(renderer, tr(STR_DICT_NO_DEFINITION));
+    pageDirty = true;
+    return;
+  }
+
+  // Wrap the definition into overlay lines. wrappedText splits on spaces
+  // only, so split on '\n' first (senses are '\n'-joined by the converter).
+  headword = matched;
+  defLines.clear();
+  int t, r, b, l;
+  renderer.getOrientedViewableTRBL(&t, &r, &b, &l);
+  const int panelW = renderer.getScreenWidth() - l - r;
+  const int wrapW = panelW - 2 * (PANEL_BORDER + PANEL_PAD);
+  defLines.reserve(strlen(defBuf.get()) / 24 + 4);
+  const char* seg = defBuf.get();
+  while (seg != nullptr && *seg != '\0') {
+    const char* nl = strchr(seg, '\n');
+    std::string segment = nl != nullptr ? std::string(seg, nl - seg) : std::string(seg);
+    if (segment.empty()) {
+      defLines.emplace_back();
+    } else {
+      // maxLines is generous; scrolling handles the overflow.
+      auto wrapped = renderer.wrappedText(UI_12_FONT_ID, segment.c_str(), wrapW, 512);
+      for (auto& line : wrapped) {
+        defLines.push_back(std::move(line));
+      }
+    }
+    seg = nl != nullptr ? nl + 1 : nullptr;
+  }
+  if (defLines.empty()) {
+    defLines.emplace_back();
+  }
+
+  scrollLine = 0;
+  state = State::Definition;
+  RenderLock lock;
+  drawDefinitionOverlay();
+}
+
+void WordLookupMode::drawDefinitionOverlay() {
+  int t, r, b, l;
+  renderer.getOrientedViewableTRBL(&t, &r, &b, &l);
+  const int screenW = renderer.getScreenWidth();
+  const int screenH = renderer.getScreenHeight();
+  const int panelW = screenW - l - r;
+
+  const int uiLineH = renderer.getLineHeight(UI_12_FONT_ID);
+  const int headerH = uiLineH + PANEL_PAD;  // headword row incl. gap below
+
+  const int maxPanelH = static_cast<int>(screenH * PANEL_MAX_HEIGHT_RATIO);
+  const int neededH =
+      2 * (PANEL_BORDER + PANEL_PAD) + headerH + static_cast<int>(defLines.size()) * uiLineH;
+  const int panelH = neededH < maxPanelH ? neededH : maxPanelH;
+  const int panelX = l;
+  const int panelY = screenH - b - panelH;
+
+  visibleLines = (panelH - 2 * (PANEL_BORDER + PANEL_PAD) - headerH) / uiLineH;
+  if (visibleLines < 1) visibleLines = 1;
+  const int maxScroll = static_cast<int>(defLines.size()) - visibleLines;
+  if (scrollLine > maxScroll) scrollLine = maxScroll < 0 ? 0 : maxScroll;
+
+  renderer.fillRect(panelX, panelY, panelW, panelH, false);
+  renderer.drawRect(panelX, panelY, panelW, panelH, PANEL_BORDER, true);
+
+  const int textX = panelX + PANEL_BORDER + PANEL_PAD;
+  int y = panelY + PANEL_BORDER + PANEL_PAD;
+  renderer.drawText(UI_12_FONT_ID, textX, y, headword.c_str(), true, EpdFontFamily::BOLD);
+
+  // Scroll indicator (e.g. "3/9") in the top-right corner when overflowing.
+  if (static_cast<int>(defLines.size()) > visibleLines) {
+    char indicator[24];
+    snprintf(indicator, sizeof(indicator), "%d/%d", scrollLine + visibleLines,
+             static_cast<int>(defLines.size()));
+    const int indicatorW = renderer.getTextWidth(UI_10_FONT_ID, indicator);
+    renderer.drawText(UI_10_FONT_ID, panelX + panelW - PANEL_BORDER - PANEL_PAD - indicatorW, y, indicator, true);
+  }
+  y += headerH;
+
+  for (int i = 0; i < visibleLines; i++) {
+    const size_t lineIdx = static_cast<size_t>(scrollLine) + i;
+    if (lineIdx >= defLines.size()) break;
+    if (!defLines[lineIdx].empty()) {
+      renderer.drawText(UI_12_FONT_ID, textX, y, defLines[lineIdx].c_str(), true);
+    }
+    y += uiLineH;
+  }
+
+  renderer.displayBuffer(HalDisplay::FAST_REFRESH);
 }
 
 std::string WordLookupMode::selectedRawWord() const {
@@ -207,11 +374,38 @@ WordLookupMode::LoopResult WordLookupMode::loop() {
       handleSelectingInput();
       return state == State::Inactive ? LoopResult::Exited : LoopResult::Consumed;
     case State::Definition:
-      // Implemented with the definition overlay.
-      state = State::Selecting;
+      handleDefinitionInput();
       return LoopResult::Consumed;
   }
   return LoopResult::Consumed;
+}
+
+void WordLookupMode::handleDefinitionInput() {
+  // Back dismisses the overlay back to word selection.
+  if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+    state = State::Selecting;
+    headword.clear();
+    defLines.clear();
+    defLines.shrink_to_fit();
+    RenderLock lock;
+    redrawPageWithHighlight();
+    return;
+  }
+
+  // Up/Down scroll by a near-full panel.
+  const int step = visibleLines > 1 ? visibleLines - 1 : 1;
+  const int maxScroll = static_cast<int>(defLines.size()) - visibleLines;
+  if (mappedInput.wasPressed(MappedInputManager::Button::Up) && scrollLine > 0) {
+    scrollLine = scrollLine > step ? scrollLine - step : 0;
+    RenderLock lock;
+    drawDefinitionOverlay();
+    return;
+  }
+  if (mappedInput.wasPressed(MappedInputManager::Button::Down) && scrollLine < maxScroll) {
+    scrollLine += step;
+    RenderLock lock;
+    drawDefinitionOverlay();
+  }
 }
 
 void WordLookupMode::handleSelectingInput() {
@@ -229,9 +423,7 @@ void WordLookupMode::handleSelectingInput() {
     }
   }
   if (confirmTracker.poll(millis()) == ReaderUtils::DoublePressTracker::Event::Single) {
-    const std::string raw = selectedRawWord();
-    LOG_DBG("WLM", "Lookup requested: '%s'", raw.c_str());
-    // Definition overlay lands in the next change; lookup wiring follows it.
+    lookupSelectedWord();
     return;
   }
 

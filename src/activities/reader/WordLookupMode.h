@@ -68,9 +68,17 @@ class WordLookupMode {
   void moveLine(int direction);
   void exitToReading();
   void handleSelectingInput();
+  void handleDefinitionInput();
   // Fetches the selected word (raw, joined with a trailing line-end hyphen
   // fragment when applicable) by transiently reloading the page.
   std::string selectedRawWord() const;
+  // Looks the selected word up (with possessive/plural fallbacks) and opens
+  // the definition overlay, or shows a popup on miss / missing dictionary.
+  void lookupSelectedWord();
+  void drawDefinitionOverlay();
+  // Re-renders the BW page + highlight and displays it (popup cleanup and
+  // overlay dismissal both land here).
+  void redrawPageWithHighlight();
 
   GfxRenderer& renderer;
   MappedInputManager& mappedInput;
@@ -84,4 +92,18 @@ class WordLookupMode {
   std::vector<WordRef> words;  // selectable words only, reading order
   size_t selected = 0;
   ReaderUtils::DoublePressTracker confirmTracker;
+
+  // Dictionary handle, opened on the first lookup and kept for the mode's
+  // lifetime on this page set; closed on exit (member-handle release point).
+  CpDictSdFile dict;
+  bool dictOpened = false;
+
+  // Definition overlay state; transient, cleared when the overlay closes.
+  std::string headword;
+  std::vector<std::string> defLines;
+  int scrollLine = 0;
+  int visibleLines = 0;
+  // A popup (miss / missing dictionary) painted over the page; the next
+  // interaction must repaint the page instead of taking the XOR fast path.
+  bool pageDirty = false;
 };
