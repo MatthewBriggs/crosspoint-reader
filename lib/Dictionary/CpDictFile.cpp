@@ -40,8 +40,8 @@ bool CpDictFile::begin() {
 
   // Offsets must be monotonic and consistent with the record count, otherwise
   // the file is corrupt and binary-search reads could run wild.
-  if (count == 0 || indexOffset != HEADER_SIZE ||
-      keysOffset != indexOffset + count * INDEX_RECORD_SIZE || defsOffset < keysOffset) {
+  if (count == 0 || indexOffset != HEADER_SIZE || keysOffset != indexOffset + count * INDEX_RECORD_SIZE ||
+      defsOffset < keysOffset) {
     return false;
   }
 

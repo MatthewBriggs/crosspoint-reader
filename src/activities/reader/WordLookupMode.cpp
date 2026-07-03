@@ -281,8 +281,7 @@ void WordLookupMode::drawDefinitionOverlay() {
   const int headerH = uiLineH + PANEL_PAD;  // headword row incl. gap below
 
   const int maxPanelH = static_cast<int>(screenH * PANEL_MAX_HEIGHT_RATIO);
-  const int neededH =
-      2 * (PANEL_BORDER + PANEL_PAD) + headerH + static_cast<int>(defLines.size()) * uiLineH;
+  const int neededH = 2 * (PANEL_BORDER + PANEL_PAD) + headerH + static_cast<int>(defLines.size()) * uiLineH;
   const int panelH = neededH < maxPanelH ? neededH : maxPanelH;
   const int panelX = l;
   const int panelY = screenH - b - panelH;
@@ -302,8 +301,7 @@ void WordLookupMode::drawDefinitionOverlay() {
   // Scroll indicator (e.g. "3/9") in the top-right corner when overflowing.
   if (static_cast<int>(defLines.size()) > visibleLines) {
     char indicator[24];
-    snprintf(indicator, sizeof(indicator), "%d/%d", scrollLine + visibleLines,
-             static_cast<int>(defLines.size()));
+    snprintf(indicator, sizeof(indicator), "%d/%d", scrollLine + visibleLines, static_cast<int>(defLines.size()));
     const int indicatorW = renderer.getTextWidth(UI_10_FONT_ID, indicator);
     renderer.drawText(UI_10_FONT_ID, panelX + panelW - PANEL_BORDER - PANEL_PAD - indicatorW, y, indicator, true);
   }

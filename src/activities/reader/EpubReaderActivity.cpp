@@ -548,8 +548,9 @@ EpubReaderActivity::ContentMargins EpubReaderActivity::computeContentMargins() c
   // reserves space for automatic page turn indicator when no status bar or progress bar only
   if (automaticPageTurnActive &&
       (statusBarHeight == 0 || statusBarHeight == UITheme::getInstance().getProgressBarHeight())) {
-    m.bottom += std::max(SETTINGS.screenMargin,
-                         static_cast<uint8_t>(statusBarHeight + UITheme::getInstance().getMetrics().statusBarVerticalMargin));
+    m.bottom +=
+        std::max(SETTINGS.screenMargin,
+                 static_cast<uint8_t>(statusBarHeight + UITheme::getInstance().getMetrics().statusBarVerticalMargin));
   } else {
     m.bottom += std::max(SETTINGS.screenMargin, statusBarHeight);
   }
@@ -570,13 +571,10 @@ void EpubReaderActivity::redrawPageBw() {
   renderStatusBar();
 }
 
-void EpubReaderActivity::redrawPageBwTrampoline(void* ctx) {
-  static_cast<EpubReaderActivity*>(ctx)->redrawPageBw();
-}
+void EpubReaderActivity::redrawPageBwTrampoline(void* ctx) { static_cast<EpubReaderActivity*>(ctx)->redrawPageBw(); }
 
 void EpubReaderActivity::enterWordLookup() {
-  if (!section || section->pageCount == 0 || section->currentPage < 0 ||
-      section->currentPage >= section->pageCount) {
+  if (!section || section->pageCount == 0 || section->currentPage < 0 || section->currentPage >= section->pageCount) {
     return;
   }
   automaticPageTurnActive = false;

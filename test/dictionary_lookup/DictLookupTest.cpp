@@ -85,7 +85,7 @@ TEST_F(DictLookupTest, KeysAreCasefoldedByConverter) {
   EXPECT_NE(lookup("abbey"), "");
   EXPECT_NE(lookup("\xC3\xBC"
                    "ber"),
-            "");  // "über"
+            "");                   // "über"
   EXPECT_EQ(lookup("Abbey"), "");  // device queries must be pre-normalized
 }
 
