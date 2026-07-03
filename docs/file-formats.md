@@ -8,8 +8,13 @@ All POD fields are written in the ESP32 little-endian representation used by
 ## `*.cpdict` (CPD1)
 
 Offline dictionary consumed by `lib/Dictionary/CpDictFile`. The reader uses the
-first `*.cpdict` file (alphabetical) found in `/dictionary/` on the SD card.
-Files are produced by `scripts/build_dictionary.py` from TSV or StarDict input.
+`*.cpdict` file selected in Settings > Reader > Dictionary, defaulting to the
+first found (alphabetical) in `/dictionary/` on the SD card. Files are produced
+by `scripts/build_dictionary.py` from TSV or StarDict input. StarDict sources in
+Webster's 1913 / dictd (GCIDE) notation are cleaned by default — respelling
+delimiters (`\He\`), phonetic bracket codes (`[=e]`, `[i^]`), and cross-reference
+braces (`{Him}`) are flattened to plain text; pass `--no-gcide-cleanup` to keep
+the raw markup.
 
 Lookup is a streaming binary search over the index table; the device compares
 the query against keys with `memcmp` on raw UTF-8 bytes, so the converter MUST

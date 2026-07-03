@@ -67,6 +67,50 @@ def strip_markup(text: str) -> str:
     return _TAG_RE.sub("", text)
 
 
+# GCIDE / dictd "Webster's 1913" notation. These respelling and cross-reference
+# markers are meant for a dictionary UI, not plain reading, so we flatten them:
+#   \He\           headword respelling delimiters   -> dropped
+#   (h[=e])        phonetic codes: [=e] [i^] ['o]... -> base letters (he)
+#   {Him}          cross-reference to a defined word -> Him
+#   [Obs.] [R.]    usage labels                      -> kept (real annotations)
+_INNER_BRACKET_RE = re.compile(r"\[[^\[\]]*\]")
+_BACKSLASH_RE = re.compile(r"\\[^\\]{0,40}\\")
+_DIACRITIC_RE = re.compile(r"[=^'`~:]")
+_SPACE_PUNCT_RE = re.compile(r"\s+([,;.:)])")
+
+
+def _flatten_bracket(match: "re.Match[str]") -> str:
+    inner = match.group(0)[1:-1]
+    # Phonetic respelling codes are short (a letter or digraph plus a diacritic
+    # marker, e.g. [=e] [i^] ['o] [th]). Longer brackets are real annotations
+    # (usage labels like [Obs.], grammar/etymology notes like [AS. ...]) and are
+    # kept verbatim — only their nested phonetic codes and braces get flattened.
+    if len(inner) <= 4 and (_DIACRITIC_RE.search(inner) or re.fullmatch(r"[a-zA-Z]{1,3}", inner)):
+        return re.sub(r"[^a-zA-Z]", "", inner)
+    return match.group(0)
+
+
+def clean_gcide(text: str) -> str:
+    """Flatten Webster's 1913 (dictd/GCIDE) respelling and reference markup."""
+    text = _BACKSLASH_RE.sub("", text)
+    # Resolve innermost brackets repeatedly so nested cases like
+    # "[nom. {His} (h[i^]z)]" collapse from the inside out.
+    prev = None
+    while prev != text:
+        prev = text
+        text = _INNER_BRACKET_RE.sub(_flatten_bracket, text)
+    text = text.replace("{", "").replace("}", "")
+    # The source hard-wraps lines mid-sentence; fold those single newlines into
+    # spaces so the reader can re-wrap, but keep blank-line paragraph breaks
+    # (sense boundaries) as single newlines for the overlay to render.
+    paragraphs = []
+    for para in re.split(r"\n[ \t]*\n", text):
+        para = _SPACE_PUNCT_RE.sub(r"\1", re.sub(r"\s+", " ", para)).strip()
+        if para:
+            paragraphs.append(para)
+    return "\n".join(paragraphs)
+
+
 def read_tsv(path: str):
     """Yield (word, definition) pairs from a word<TAB>definition file."""
     with open(path, "r", encoding="utf-8") as fh:
@@ -81,7 +125,7 @@ def read_tsv(path: str):
             yield word, definition
 
 
-def read_stardict(base: str):
+def read_stardict(base: str, clean: bool = True):
     """Yield (word, definition) pairs from base.ifo/.idx/.dict[.dz]."""
     ifo_path = base + ".ifo"
     idx_path = base + ".idx"
@@ -111,7 +155,10 @@ def read_stardict(base: str):
         definition = dict_data[offset : offset + size].decode(
             "utf-8", errors="replace"
         )
-        yield word, strip_markup(definition)
+        definition = strip_markup(definition)
+        if clean:
+            definition = clean_gcide(definition)
+        yield word, definition
 
 
 def build(entries, out_path: str, limit: int = 0) -> None:
@@ -200,9 +247,18 @@ def main() -> None:
     parser.add_argument(
         "--verify", action="store_true", help="re-read and check the output"
     )
+    parser.add_argument(
+        "--no-gcide-cleanup",
+        action="store_true",
+        help="keep raw Webster's/dictd respelling markup in StarDict input",
+    )
     args = parser.parse_args()
 
-    entries = read_tsv(args.tsv) if args.tsv else read_stardict(args.stardict)
+    entries = (
+        read_tsv(args.tsv)
+        if args.tsv
+        else read_stardict(args.stardict, clean=not args.no_gcide_cleanup)
+    )
     build(entries, args.out, args.limit)
     if args.verify:
         verify(args.out)
