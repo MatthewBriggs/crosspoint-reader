@@ -73,25 +73,44 @@ void WordLookupMode::buildWordIndex(const Page& page, const int marginLeft, cons
     const auto& line = static_cast<const PageLine&>(*el);
     const auto& block = *line.getBlock();
     const auto& lineWords = block.getWords();
-    for (size_t w = 0; w < lineWords.size(); w++) {
+    const size_t wordCount = lineWords.size();
+    for (size_t w = 0; w < wordCount; w++) {
       const std::string& word = lineWords[w];
       // Skip tokens with no dictionary-searchable content (bare punctuation,
-      // the synthetic em-space indent).
-      if (dictNormalizeKey(word).empty()) {
+      // the synthetic em-space indent). Cheap allocation-free check — the full
+      // normalization only runs later, on the one word the user looks up.
+      if (!dictHasWordContent(word)) {
         continue;
       }
       const auto style = block.getWordStyle(w);
-      int x = line.xPos + block.getWordXpos(w) + marginLeft;
-      const char* visible = word.c_str();
-      if (startsWithEmSpace(word)) {
-        // The paragraph-indent em-space is part of the word string but should
-        // not be highlighted (mirrors TextBlock's decoration handling).
-        x += renderer.getTextAdvanceX(fontId, "\xE2\x80\x83", style);
-        visible += 3;
+      const int wordXpos = block.getWordXpos(w);
+      int x = line.xPos + wordXpos + marginLeft;
+
+      // Width without per-word font metrics: the layout already placed every
+      // token, so the next token's x-position gives this word's advance for
+      // free. getTextWidth() is O(glyphs) and, with SD fonts, does SD I/O — at
+      // ~300 words/page that measured in whole seconds on device. Fall back to
+      // it only where no next token exists (last on line) or the geometry is
+      // special (paragraph-indent em-space, half-size SUP/SUB).
+      const bool special = startsWithEmSpace(word) || (style & (EpdFontFamily::SUP | EpdFontFamily::SUB)) != 0;
+      int width = 0;
+      if (w + 1 < wordCount && !special) {
+        width = block.getWordXpos(w + 1) - wordXpos;  // word advance incl. trailing space
       }
-      int width = renderer.getTextWidth(fontId, visible, style);
-      if ((style & (EpdFontFamily::SUP | EpdFontFamily::SUB)) != 0) {
-        width = (width + 1) / 2;  // drawText renders SUP/SUB at 50%
+      if (width <= 0) {
+        // Last word on the line, special geometry, or an RTL line where the
+        // next token sits to the left (negative delta): pay for the metrics.
+        const char* visible = word.c_str();
+        if (startsWithEmSpace(word)) {
+          // The paragraph-indent em-space is part of the word string but should
+          // not be highlighted (mirrors TextBlock's decoration handling).
+          x += renderer.getTextAdvanceX(fontId, "\xE2\x80\x83", style);
+          visible += 3;
+        }
+        width = renderer.getTextWidth(fontId, visible, style);
+        if ((style & (EpdFontFamily::SUP | EpdFontFamily::SUB)) != 0) {
+          width = (width + 1) / 2;  // drawText renders SUP/SUB at 50%
+        }
       }
       if (width <= 0) {
         continue;

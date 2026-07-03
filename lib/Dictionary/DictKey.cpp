@@ -93,6 +93,16 @@ std::string dictNormalizeKey(const std::string& raw) {
   return utf8ComposeNfc(folded);
 }
 
+bool dictHasWordContent(const std::string& raw) {
+  const auto* p = reinterpret_cast<const unsigned char*>(raw.c_str());
+  while (*p != '\0') {
+    if (!isTrimmableCp(utf8NextCodepoint(&p))) {
+      return true;
+    }
+  }
+  return false;
+}
+
 std::string dictKeyStripPossessive(const std::string& key) {
   // "'s" (2 bytes) or "’s" (U+2019 + s, 4 bytes)
   if (key.size() > 2 && key.compare(key.size() - 2, 2, "'s") == 0) {

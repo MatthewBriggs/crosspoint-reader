@@ -145,6 +145,19 @@ TEST(DictKeyTest, EmptyForPunctuationOnlyTokens) {
   EXPECT_EQ(dictNormalizeKey(""), "");
 }
 
+TEST(DictKeyTest, HasWordContentMatchesNormalizeEmptiness) {
+  // dictHasWordContent must agree with dictNormalizeKey's non-emptiness, since
+  // buildWordIndex uses the cheap check to decide selectability.
+  for (const char* tok : {"Holmes,", "it's", "mother-in-law", "3", "caf\xC3\xA9", "\xE2\x80\x83Word"}) {
+    EXPECT_TRUE(dictHasWordContent(tok)) << tok;
+    EXPECT_FALSE(dictNormalizeKey(tok).empty()) << tok;
+  }
+  for (const char* tok : {"", "...", "\xE2\x80\x94", "\xE2\x80\x83", "\"'"}) {
+    EXPECT_FALSE(dictHasWordContent(tok)) << tok;
+    EXPECT_TRUE(dictNormalizeKey(tok).empty()) << tok;
+  }
+}
+
 TEST(DictKeyTest, FallbackVariants) {
   EXPECT_EQ(dictKeyStripPossessive("detective's"), "detective");
   EXPECT_EQ(dictKeyStripPossessive("holmes\xE2\x80\x99s"), "holmes");

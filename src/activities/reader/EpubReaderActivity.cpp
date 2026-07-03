@@ -587,10 +587,12 @@ void EpubReaderActivity::enterWordLookup() {
   automaticPageTurnActive = false;
 
   RenderLock lock(*this);
+  const auto t0 = millis();
   const auto page = section->loadPageFromSectionFile();
   if (!page) {
     return;
   }
+  const auto tLoad = millis();
   if (!wordLookup) {
     wordLookup = makeUniqueNoThrow<WordLookupMode>(renderer, mappedInput, dictionaryPath,
                                                    WordLookupMode::RedrawFn{this, &redrawPageBwTrampoline});
@@ -604,6 +606,7 @@ void EpubReaderActivity::enterWordLookup() {
     LOG_DBG("ERS", "No selectable words on page");
     return;
   }
+  const auto tIndex = millis();
   // The BW framebuffer already holds this page from the last render (the AA
   // pass leaves it intact), so we normally skip re-rendering and just invert
   // the first word — the mode is BW-only anyway. Only re-render when something
@@ -616,6 +619,8 @@ void EpubReaderActivity::enterWordLookup() {
   }
   wordLookup->drawHighlight();
   renderer.displayBuffer(HalDisplay::FAST_REFRESH);
+  LOG_DBG("ERS", "Word lookup entry: load=%lums index=%lums refresh=%lums total=%lums", tLoad - t0, tIndex - tLoad,
+          millis() - tIndex, millis() - t0);
 }
 
 void EpubReaderActivity::openReaderMenu() {

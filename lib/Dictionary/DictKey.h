@@ -10,6 +10,12 @@
 // Returns an empty string for tokens with no word content (bare punctuation).
 std::string dictNormalizeKey(const std::string& raw);
 
+// Cheap, allocation-free predicate: true when the token has any word content
+// (a letter/digit codepoint), i.e. exactly when dictNormalizeKey() would return
+// non-empty. Used to filter selectable words on a page without paying the full
+// normalization cost per word.
+bool dictHasWordContent(const std::string& raw);
+
 // Fallback variants tried in order when the exact key misses:
 // "word's"/"word’s" -> "word", then trailing "s" -> "" (naive plural).
 // Returns an empty string when the variant does not apply.
