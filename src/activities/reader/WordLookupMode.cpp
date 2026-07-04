@@ -464,8 +464,7 @@ void WordLookupMode::handleSelectingInput() {
 
   // Confirm: single = dictionary lookup, double = exit (mirrors mode entry).
   // Double fires on the second press; a lone press looks up once the window closes.
-  if (mappedInput.wasPressed(MappedInputManager::Button::Confirm) &&
-      confirmTracker.consumeSecondPress(millis())) {
+  if (mappedInput.wasPressed(MappedInputManager::Button::Confirm) && confirmTracker.consumeSecondPress(millis())) {
     exitToReading();
     return;
   }

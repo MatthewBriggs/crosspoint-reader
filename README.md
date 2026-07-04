@@ -18,6 +18,8 @@ CrossPoint is open-source e-reader firmware - community-built, fully hackable, f
 
 - **Custom fonts**: install your favorite fonts on the SD card.
 
+- **Dictionary lookup**: offline inline word lookup while reading, with switchable dictionaries you build yourself. See [Dictionary word lookup](./docs/dictionary.md).
+
 - **Tilt page turn (X3 only)**.
 
 - **Library workflow**: folder browser, hidden-file toggle, long-press delete, recent books, SD-cache management.
@@ -39,8 +41,6 @@ CrossPoint is open-source e-reader firmware - community-built, fully hackable, f
 - **Localization**: 24 UI languages and counting. RTL support.
 
 ### Coming soon:
-
-- Dictionary lookup — inline word lookup without leaving the reader.
 
 - More themes.
 
@@ -132,6 +132,7 @@ Conversion runs the firmware repo's `lib/EpdFont/scripts/fontconvert_sdcard.py` 
 ## Documentation
 
 - [User Guide](./USER_GUIDE.md)
+- [Dictionary word lookup](./docs/dictionary.md)
 - [Web server usage](./docs/webserver.md)
 - [Web server endpoints](./docs/webserver-endpoints.md)
 - [Project scope](./SCOPE.md)

@@ -559,6 +559,17 @@ Auto Page Turn automatically advances pages at a set interval, useful for hands-
 
 On the **Xteink X3**, the gyroscope can be used to turn pages by tilting the device. This feature is available in the Controls settings.
 
+### Dictionary Word Lookup
+
+If you have placed a dictionary on the SD card, you can look words up without leaving the page:
+
+* **Enter lookup:** double-tap **Select** (Confirm). The first word is highlighted.
+* **Move the highlight:** **Left/Right** step by word, **Up/Down** step by line.
+* **Look up:** press **Select** on the highlighted word to open the definition panel; **Up/Down** scroll a long entry.
+* **Close / exit:** **Back** closes the definition, then leaves lookup (double-tapping **Select** also exits).
+
+Dictionaries are `.cpdict` files you generate yourself and copy into a `/dictionary/` folder on the SD card; with two or more installed, a **Dictionary** picker appears in the **[Reader Settings](#362-reader)**. See **[Dictionary word lookup](./docs/dictionary.md)** for the full guide, including how to build a dictionary.
+
 ### Footnote Navigation
 
 When reading an EPUB that contains footnotes, you can navigate to the footnote text by selecting the footnote reference in the book. From the footnote, you can return to your original reading position.
